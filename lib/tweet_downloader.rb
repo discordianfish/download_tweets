@@ -21,17 +21,22 @@ class TweetDownloader
     Dir.glob("#{tweet_dir}/*.json").map { |f| File.basename(f, ".json").to_i rescue 1 }.max
   end
 
-  def download_tweets(options = {})
-    options[:since_id] ||= since_id
+  def download_tweets(options = {:page => 1})
+    options[:since_id] ||= since_id unless options[:page]
     options[:count] ||= 100
     tweets = fetch_page(options)
-    STDERR.puts "#{tweets.size} tweets"
-    save_tweets(tweets)
-    unless tweets.empty?
-      sleep (SLEEPY_TIME)
-      # twitter starts counting pages at 1 (not a zero)
-      download_tweets(options.merge(:page => (options[:page] || 1) + 1))
+    if tweets
+        if tweets.empty?
+            return# done
+        end
+        STDERR.puts "#{tweets.size} tweets"
+        save_tweets(tweets)
+        options[:page] += 1
+        STDERR.puts "next page: #{options[:page]}"
     end
+    sleep (SLEEPY_TIME)
+    # twitter starts counting pages at 1 (not a zero)
+    download_tweets(options)
   end
 
   def filename(tweet)
@@ -56,6 +61,7 @@ class TweetDownloader
         next if v.nil?
         "#{k}=#{v}"
       end
+      STDERR.puts "#{path}?#{opts.join("&")}"
       "#{path}?#{opts.join("&")}"
     end
   end
@@ -66,7 +72,12 @@ class TweetDownloader
     req = Net::HTTP.start('twitter.com') do |http|
       http.read_timeout = 600
       response = http.get(page_path(options))
-      json = JSON.parse(response.body)
+      begin
+        json = JSON.parse(response.body)
+      rescue
+        STDERR.puts "Error parsing page, try again"
+        return
+      end
     end
     json
   end
